@@ -1,12 +1,14 @@
 use repyh_proof_of_work::*;
 use std::collections::{HashMap, HashSet};
-use std::net::IpAddr;
+use std::net::SocketAddr;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task;
 use tokio::task::JoinHandle;
 
 pub struct Node {
-    address: IpAddr,
-    peers: HashSet<IpAddr>,
+    address: SocketAddr,
+    peers: HashSet<SocketAddr>,
     mempool: HashMap<Hash, Transaction>,
     chain: BlockChain,
     txs_to_mine: Transactions,
@@ -14,11 +16,11 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(address: IpAddr) -> Self {
+    pub fn new(address: SocketAddr, peers: &[SocketAddr]) -> Self {
         Node {
             mempool: HashMap::new(),
             chain: BlockChain::new(),
-            peers: HashSet::new(),
+            peers: peers.iter().cloned().collect(),
             txs_to_mine: Transactions(vec![]),
             mining_task: None,
             address,
@@ -30,10 +32,17 @@ impl Node {
             // if a new peer connects
             Message::Connect(addr) if addr == self.address => None,
             // ... and is not ourselves, add it to the peers and broadcast some known peers
-            Message::Connect(addr) => self
-                .peers
-                .insert(addr)
-                .then(|| Message::Addr(self.peers.iter().take(10).cloned().collect())),
+            Message::Connect(addr) => self.peers.insert(addr).then(|| {
+                Message::Addr(
+                    self.peers
+                        .iter()
+                        .filter(|&a| a != &addr)
+                        .take(9)
+                        .chain(&[self.address])
+                        .cloned()
+                        .collect(),
+                )
+            }),
 
             // add broadcast peer addresses to addresses (except ourselves)
             Message::Addr(addrs) => {
@@ -81,7 +90,38 @@ impl Node {
             }
         }
     }
+
+    pub async fn broadcast(&self, message: Message) {
+        broadcast(self.peers.iter(), message).await
+    }
 }
 
 #[tokio::main]
-async fn main() {}
+async fn main() {
+    let initial_peers: Vec<SocketAddr> = std::env::args().filter_map(|s| s.parse().ok()).collect();
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    println!(
+        "Node started at {} with initial peers: {:?}",
+        address, initial_peers
+    );
+
+    let mut node_state = Node::new(address, &initial_peers);
+
+    // Announce ourselves to network
+    node_state.broadcast(Message::Connect(address)).await;
+
+    println!("Starting to process...");
+    while let Ok((mut socket, _)) = listener.accept().await {
+        let mut buf = [0; 1024];
+        let n = socket.read(&mut buf).await.unwrap();
+        let message: Message = bincode::deserialize(&buf[0..n]).unwrap();
+        println!("Got {:?}", message);
+        let reply = node_state.handle(message);
+        if let Some(r) = reply {
+            println!("Send {:?}", &r);
+            node_state.broadcast(r).await;
+        }
+    }
+}
