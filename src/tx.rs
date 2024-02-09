@@ -1,4 +1,4 @@
-use crate::hash::{Hash, Hashable};
+use crate::hash::{Hash, Hashable, HASH_LENGTH};
 use serde::{Deserialize, Serialize};
 
 type Address = Hash;
@@ -17,7 +17,22 @@ impl Hashable for Transaction {
 }
 
 /// Implements merkle tree hashing for transactions
-pub struct Transactions(Vec<Transaction>);
+pub struct Transactions(pub Vec<Transaction>);
+
+impl Transactions {
+    #[cfg(test)]
+    pub fn dummy_txs(len: u32) -> Self {
+        Transactions(
+            (1..1000)
+                .map(|i: u32| Transaction {
+                    spender: [i as u8; HASH_LENGTH],
+                    receiver: [(i + 1) as u8; HASH_LENGTH],
+                    amount: i,
+                })
+                .collect(),
+        )
+    }
+}
 
 #[inline]
 fn hash(txs: &[Transaction]) -> Hash {
@@ -69,15 +84,6 @@ mod test {
 
     #[test]
     fn test_many() {
-        Transactions(
-            (1..1000)
-                .map(|i: u32| Transaction {
-                    spender: [i as u8; HASH_LENGTH],
-                    receiver: [(i + 1) as u8; HASH_LENGTH],
-                    amount: i,
-                })
-                .collect(),
-        )
-        .hash();
+        Transactions::dummy_txs(1000).hash();
     }
 }
