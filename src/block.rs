@@ -11,6 +11,15 @@ pub struct BlockHeader {
     pub nonce: u32,
 }
 
+pub const GENESIS_NONCE: u32 = 442;
+
+pub const GENESIS_HEADER: BlockHeader = BlockHeader {
+    prev_block_hash: [0; HASH_LENGTH],
+    difficulty: 1,
+    merkle_hash: GENESIS_TXS_HASH,
+    nonce: GENESIS_NONCE,
+};
+
 impl BlockHeader {
     /// Creates a new block header with 0 nonce.
     /// This block header is only valid after solving it.
@@ -61,8 +70,6 @@ pub struct Block {
     transactions: Transactions,
 }
 
-pub const GENESIS_NONCE: u32 = 442;
-
 impl Block {
     pub fn new(prev_block_hash: Hash, difficulty: u32, transactions: Transactions) -> Self {
         Block {
@@ -73,12 +80,7 @@ impl Block {
 
     pub fn genesis() -> Self {
         Block {
-            header: BlockHeader {
-                prev_block_hash: [0; HASH_LENGTH],
-                difficulty: 1,
-                merkle_hash: GENESIS_TXS_HASH,
-                nonce: GENESIS_NONCE,
-            },
+            header: GENESIS_HEADER,
             transactions: Transactions::genesis(),
         }
     }

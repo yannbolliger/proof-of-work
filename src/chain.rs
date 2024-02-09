@@ -9,49 +9,42 @@ struct BlockEntry {
 
 pub struct BlockChain {
     blocks: HashMap<Hash, BlockEntry>,
-    highest_block_hash: Option<Hash>,
+    highest_block_hash: Hash,
 }
 
 impl BlockChain {
-    fn empty() -> Self {
+    pub fn new() -> Self {
+        let genesis_block = Block::genesis();
+        let genesis_hash = genesis_block.hash();
         BlockChain {
-            blocks: HashMap::new(),
-            highest_block_hash: None,
+            blocks: HashMap::from([(
+                genesis_hash,
+                BlockEntry {
+                    block: genesis_block,
+                    height: 0,
+                },
+            )]),
+            highest_block_hash: genesis_hash,
         }
     }
 
-    pub fn new() -> Self {
-        let mut chain = Self::empty();
-        let genesis_block = Block::genesis();
-        let genesis_hash = genesis_block.hash();
-        chain.blocks.insert(
-            genesis_hash,
-            BlockEntry {
-                block: genesis_block,
-                height: 0,
-            },
-        );
-        chain.highest_block_hash = Some(genesis_hash);
-        chain
-    }
-
-    fn highest_block_entry(&self) -> Option<&BlockEntry> {
-        self.highest_block_hash.and_then(|e| self.blocks.get(&e))
+    fn highest_block_entry(&self) -> &BlockEntry {
+        self.blocks
+            .get(&self.highest_block_hash)
+            .expect("highest block hash must be in the chain")
     }
 
     /// Returns the latest block on the main chain
-    pub fn highest_block(&self) -> Option<&Block> {
-        self.highest_block_entry().map(|e| &e.block)
+    pub fn highest_block(&self) -> &Block {
+        &self.highest_block_entry().block
     }
 
     pub fn main_chain_length(&self) -> usize {
-        self.highest_block_entry()
-            .map(|e| e.height + 1)
-            .unwrap_or_else(|| 0)
+        self.highest_block_entry().height + 1
     }
 
     /// Verifies a block and if it is valid, adds it to this blockchain.
-    /// Returns whether the block was accepted or not.
+    /// Returns whether the block was accepted and new or not.
     // TODO: currently, this only accepts blocks for which the parent is known i.e.
     //   orphans are rejected.
     pub fn add_block(&mut self, block: &Block) -> bool {
@@ -66,7 +59,7 @@ impl BlockChain {
             };
             let hash = block.hash();
             if entry.height >= self.main_chain_length() {
-                self.highest_block_hash = Some(hash);
+                self.highest_block_hash = hash;
             }
             return self.blocks.insert(hash, entry).is_none();
         }
@@ -82,24 +75,17 @@ mod test {
     use crate::tx::{Transaction, Transactions};
 
     #[test]
-    fn add_empty() {
-        let mut chain = BlockChain::empty();
-        assert!(!chain.add_block(&Block::genesis()));
-        assert_eq!(chain.main_chain_length(), 0);
-    }
-
-    #[test]
     fn add_block() {
         let mut chain = BlockChain::new();
         assert_eq!(chain.main_chain_length(), 1);
-        assert_eq!(chain.highest_block(), Some(&Block::genesis()));
-        let genesis_hash = chain.highest_block().unwrap().hash();
+        assert_eq!(chain.highest_block(), &Block::genesis());
+        let genesis_hash = chain.highest_block().hash();
 
         let txs = Transaction::dummy_txs(10);
         let first_block = Block::mine_new(genesis_hash, 1, Transactions(txs));
         assert!(chain.add_block(&first_block));
         assert_eq!(chain.main_chain_length(), 2);
-        assert_eq!(chain.highest_block(), Some(&first_block));
+        assert_eq!(chain.highest_block(), &first_block);
 
         // add a forked block on genesis block
         let txs = Transaction::dummy_txs(2);
@@ -108,7 +94,7 @@ mod test {
         // length is still two
         assert_eq!(chain.main_chain_length(), 2);
         // highest block is still the first "highest" block
-        assert_eq!(chain.highest_block(), Some(&first_block));
+        assert_eq!(chain.highest_block(), &first_block);
 
         // add a second block on the fork
         let txs = Transaction::dummy_txs(3);
@@ -116,6 +102,6 @@ mod test {
         assert!(chain.add_block(&third_block));
         assert_eq!(chain.main_chain_length(), 3);
         // now, the highest block has switched
-        assert_eq!(chain.highest_block(), Some(&third_block));
+        assert_eq!(chain.highest_block(), &third_block);
     }
 }
