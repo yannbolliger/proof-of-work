@@ -26,11 +26,11 @@ pub fn has_leading_zeros(s: &Hash, leading: usize) -> bool {
 }
 
 pub trait Hashable {
-    fn bytes(&self) -> Vec<u8>;
-
-    fn hash(&self) -> Hash {
-        hash(&self.bytes())
+    fn hash_bytes(bytes: &[u8]) -> Hash {
+        hash(bytes)
     }
+
+    fn hash(&self) -> Hash;
 }
 
 #[cfg(test)]

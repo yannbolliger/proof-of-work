@@ -45,7 +45,7 @@ impl BlockHeader {
 }
 
 impl Hashable for BlockHeader {
-    fn bytes(&self) -> Vec<u8> {
-        bincode::serialize(self).expect("Block should be serializable")
+    fn hash(&self) -> Hash {
+        Self::hash_bytes(&bincode::serialize(self).expect("Block should be serializable"))
     }
 }
