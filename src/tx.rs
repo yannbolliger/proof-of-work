@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 type Address = Hash;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct Transaction {
     spender: Address,
     receiver: Address,
@@ -40,7 +40,7 @@ impl Hashable for Transaction {
 }
 
 /// Implements merkle tree hashing for transactions
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Transactions<'t>(pub &'t [Transaction]);
 
 pub const GENESIS_TXS: Transactions = Transactions(&[GENESIS_TX]);

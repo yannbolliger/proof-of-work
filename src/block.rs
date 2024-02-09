@@ -3,9 +3,9 @@ use crate::tx::{Transactions, GENESIS_TXS, GENESIS_TXS_HASH};
 use serde::{Deserialize, Serialize};
 use std::u32;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct BlockHeader {
-    prev_block_hash: Hash,
+    pub prev_block_hash: Hash,
     merkle_hash: Hash,
     difficulty: u32,
     pub nonce: u32,
@@ -55,6 +55,7 @@ impl Hashable for BlockHeader {
     }
 }
 
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Block<'t> {
     pub header: BlockHeader,
     transactions: Transactions<'t>,

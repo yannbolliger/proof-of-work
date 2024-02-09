@@ -3,6 +3,7 @@ use crate::hash::{B58Encode, Hashable, HASH_LENGTH};
 use crate::tx::GENESIS_TXS;
 
 mod block;
+mod chain;
 mod hash;
 mod tx;
 
