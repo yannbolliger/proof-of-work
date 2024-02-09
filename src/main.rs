@@ -5,6 +5,7 @@ use crate::tx::Transactions;
 mod block;
 mod chain;
 mod hash;
+mod node;
 mod tx;
 
 fn main() {
