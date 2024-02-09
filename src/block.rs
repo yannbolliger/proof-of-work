@@ -1,4 +1,4 @@
-use crate::hash::{check_leading_zeros, Hash, Hashable};
+use crate::hash::{has_leading_zeros, Hash, Hashable};
 use crate::tx::Transaction;
 use serde::{Deserialize, Serialize};
 use std::u32;
@@ -38,7 +38,7 @@ impl BlockHeader {
             .find(|n| {
                 let new_header = Self { nonce: *n, ..*self };
                 let hash = new_header.hash();
-                check_leading_zeros(&hash, self.difficulty as usize)
+                has_leading_zeros(&hash, self.difficulty as usize)
             })
             .unwrap()
     }

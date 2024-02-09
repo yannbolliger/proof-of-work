@@ -21,7 +21,7 @@ impl B58Encode for Hash {
     }
 }
 
-pub fn check_leading_zeros(s: &Hash, leading: usize) -> bool {
+pub fn has_leading_zeros(s: &Hash, leading: usize) -> bool {
     s[..leading].iter().all(|b| *b == 0)
 }
 
@@ -30,5 +30,29 @@ pub trait Hashable {
 
     fn hash(&self) -> Hash {
         hash(&self.bytes())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::hash::{has_leading_zeros, Hash, HASH_LENGTH};
+
+    #[test]
+    fn test_check_leading_zeros() {
+        assert!(has_leading_zeros(&[0; HASH_LENGTH], 0));
+        assert!(has_leading_zeros(&[0; HASH_LENGTH], 1));
+        assert!(has_leading_zeros(&[0; HASH_LENGTH], 0));
+        assert!(has_leading_zeros(&[0; HASH_LENGTH], 32));
+
+        assert!(has_leading_zeros(&[1; HASH_LENGTH], 0));
+        assert!(!has_leading_zeros(&[1; HASH_LENGTH], 1));
+        assert!(!has_leading_zeros(&[1; HASH_LENGTH], 32));
+
+        let from_zero: Hash = core::array::from_fn(|i| i as u8);
+        let from_one: Hash = core::array::from_fn(|i| i as u8 + 1);
+        assert!(has_leading_zeros(&from_zero, 1));
+        assert!(!has_leading_zeros(&from_zero, 2));
+        assert!(has_leading_zeros(&from_one, 0));
+        assert!(!has_leading_zeros(&from_one, 1));
     }
 }
