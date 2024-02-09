@@ -10,6 +10,29 @@ pub struct Transaction {
     amount: u32,
 }
 
+impl Transaction {
+    #[cfg(test)]
+    pub fn dummy_txs(len: u32) -> Vec<Self> {
+        (1..len)
+            .map(|i: u32| Transaction {
+                spender: [i as u8; HASH_LENGTH],
+                receiver: [(i + 1) as u8; HASH_LENGTH],
+                amount: i,
+            })
+            .collect::<Vec<_>>()
+    }
+}
+
+pub const MINT_ADDRESS: Address = [1; HASH_LENGTH];
+pub const GENESIS_TX: Transaction = Transaction {
+    spender: MINT_ADDRESS,
+    receiver: [
+        1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0,
+    ],
+    amount: 100,
+};
+
 impl Hashable for Transaction {
     fn hash(&self) -> Hash {
         Self::hash_bytes(&bincode::serialize(self).unwrap())
@@ -17,22 +40,14 @@ impl Hashable for Transaction {
 }
 
 /// Implements merkle tree hashing for transactions
-pub struct Transactions(pub Vec<Transaction>);
+#[derive(Copy, Clone)]
+pub struct Transactions<'t>(pub &'t [Transaction]);
 
-impl Transactions {
-    #[cfg(test)]
-    pub fn dummy_txs(len: u32) -> Self {
-        Transactions(
-            (1..1000)
-                .map(|i: u32| Transaction {
-                    spender: [i as u8; HASH_LENGTH],
-                    receiver: [(i + 1) as u8; HASH_LENGTH],
-                    amount: i,
-                })
-                .collect(),
-        )
-    }
-}
+pub const GENESIS_TXS: Transactions = Transactions(&[GENESIS_TX]);
+pub const GENESIS_TXS_HASH: Hash = [
+    92, 199, 78, 195, 125, 214, 27, 112, 9, 218, 38, 149, 15, 61, 223, 51, 238, 99, 110, 3, 97, 19,
+    152, 59, 226, 207, 144, 91, 101, 237, 133, 25,
+];
 
 #[inline]
 fn hash(txs: &[Transaction]) -> Hash {
@@ -52,21 +67,21 @@ fn hash(txs: &[Transaction]) -> Hash {
     }
 }
 
-impl Hashable for Transactions {
+impl<'t> Hashable for Transactions<'t> {
     fn hash(&self) -> Hash {
-        hash(&self.0)
+        hash(self.0)
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::hash::{Hashable, HASH_LENGTH};
-    use crate::tx::{Transaction, Transactions};
+    use crate::tx::{Transaction, Transactions, GENESIS_TXS, GENESIS_TXS_HASH};
 
     #[test]
     #[should_panic]
     fn test_empty() {
-        Transactions(vec![]).hash();
+        Transactions(&[]).hash();
     }
 
     #[test]
@@ -77,13 +92,13 @@ mod test {
             amount: 100,
         };
         assert_eq!(
-            Transactions(vec![tx.clone(), tx.clone()]).hash(),
-            Transactions(vec![tx]).hash()
+            Transactions(&[tx.clone(), tx.clone()]).hash(),
+            Transactions(&[tx]).hash()
         );
     }
 
     #[test]
     fn test_many() {
-        Transactions::dummy_txs(1000).hash();
+        assert_eq!(GENESIS_TXS.hash(), GENESIS_TXS_HASH);
     }
 }

@@ -1,5 +1,5 @@
-use crate::hash::{has_leading_zeros, Hash, Hashable};
-use crate::tx::Transactions;
+use crate::hash::{has_leading_zeros, Hash, Hashable, HASH_LENGTH};
+use crate::tx::{Transactions, GENESIS_TXS, GENESIS_TXS_HASH};
 use serde::{Deserialize, Serialize};
 use std::u32;
 
@@ -8,7 +8,7 @@ pub struct BlockHeader {
     prev_block_hash: Hash,
     merkle_hash: Hash,
     difficulty: u32,
-    nonce: u32,
+    pub nonce: u32,
 }
 
 impl BlockHeader {
@@ -56,12 +56,23 @@ impl Hashable for BlockHeader {
 }
 
 pub struct Block<'t> {
-    header: BlockHeader,
-    transactions: &'t Transactions,
+    pub header: BlockHeader,
+    transactions: Transactions<'t>,
 }
 
+pub const GENESIS_NONCE: u32 = 442;
+pub const GENESIS_BLOCK: Block = Block {
+    header: BlockHeader {
+        prev_block_hash: [0; HASH_LENGTH],
+        difficulty: 1,
+        merkle_hash: GENESIS_TXS_HASH,
+        nonce: GENESIS_NONCE,
+    },
+    transactions: GENESIS_TXS,
+};
+
 impl<'t> Block<'t> {
-    pub fn new(prev_block_hash: Hash, difficulty: u32, transactions: &'t Transactions) -> Self {
+    pub fn new(prev_block_hash: Hash, difficulty: u32, transactions: Transactions<'t>) -> Self {
         Block {
             header: BlockHeader::new(prev_block_hash, transactions.hash(), difficulty),
             transactions,
@@ -71,7 +82,7 @@ impl<'t> Block<'t> {
     pub fn mine_new(
         prev_block_hash: Hash,
         difficulty: u32,
-        transactions: &'t Transactions,
+        transactions: Transactions<'t>,
     ) -> Self {
         Block {
             header: BlockHeader::mine_new(prev_block_hash, transactions.hash(), difficulty),
@@ -93,9 +104,9 @@ impl<'t> Hashable for Block<'t> {
 
 #[cfg(test)]
 mod test {
-    use crate::block::{Block, BlockHeader};
-    use crate::hash::{Hash, HASH_LENGTH};
-    use crate::tx::Transactions;
+    use crate::block::{Block, BlockHeader, GENESIS_BLOCK, GENESIS_NONCE};
+    use crate::hash::{Hash, Hashable, HASH_LENGTH};
+    use crate::tx::{Transaction, Transactions};
 
     const PREVIOUS_HASH: Hash = [7; HASH_LENGTH];
 
@@ -107,8 +118,18 @@ mod test {
 
     #[test]
     fn mined_block_valid() {
-        let txs = Transactions::dummy_txs(10);
-        assert!(!Block::new(PREVIOUS_HASH, 2, &txs).is_valid());
-        assert!(Block::mine_new(PREVIOUS_HASH, 2, &txs).is_valid());
+        let txs = Transaction::dummy_txs(10);
+        assert!(!Block::new(PREVIOUS_HASH, 2, Transactions(&txs)).is_valid());
+        assert!(Block::mine_new(PREVIOUS_HASH, 2, Transactions(&txs)).is_valid());
+    }
+
+    #[test]
+    fn genesis_block_is_valid() {
+        assert!(GENESIS_BLOCK.is_valid());
+        assert_eq!(
+            GENESIS_BLOCK.transactions.hash(),
+            GENESIS_BLOCK.header.merkle_hash
+        );
+        assert_eq!(GENESIS_BLOCK.header.solve(), GENESIS_NONCE);
     }
 }

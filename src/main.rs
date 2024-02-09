@@ -1,11 +1,17 @@
-use crate::block::BlockHeader;
+use crate::block::Block;
 use crate::hash::{B58Encode, Hashable, HASH_LENGTH};
+use crate::tx::GENESIS_TXS;
 
 mod block;
 mod hash;
 mod tx;
 
 fn main() {
-    let header = BlockHeader::mine_new([0; HASH_LENGTH], [1; HASH_LENGTH], 2);
-    println!("{:?} matches hash: {:?}", header, header.hash().encode())
+    let block = Block::mine_new([0; HASH_LENGTH], 1, GENESIS_TXS);
+    println!("Genesis txs merkle hash: {:?}", GENESIS_TXS.hash());
+    println!(
+        "{:?} matches hash: {:?}",
+        block.header.nonce,
+        block.hash().encode()
+    )
 }
