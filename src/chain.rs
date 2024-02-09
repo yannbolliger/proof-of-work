@@ -1,18 +1,18 @@
-use crate::block::{Block, GENESIS_BLOCK};
+use crate::block::Block;
 use crate::hash::{Hash, Hashable};
 use std::collections::HashMap;
 
-struct BlockEntry<'t> {
-    block: Block<'t>,
+struct BlockEntry {
+    block: Block,
     height: usize,
 }
 
-struct BlockChain<'t> {
-    blocks: HashMap<Hash, BlockEntry<'t>>,
+pub struct BlockChain {
+    blocks: HashMap<Hash, BlockEntry>,
     highest_block_hash: Option<Hash>,
 }
 
-impl<'t> BlockChain<'t> {
+impl BlockChain {
     fn empty() -> Self {
         BlockChain {
             blocks: HashMap::new(),
@@ -22,23 +22,25 @@ impl<'t> BlockChain<'t> {
 
     pub fn new() -> Self {
         let mut chain = Self::empty();
+        let genesis_block = Block::genesis();
+        let genesis_hash = genesis_block.hash();
         chain.blocks.insert(
-            GENESIS_BLOCK.hash(),
+            genesis_hash,
             BlockEntry {
-                block: GENESIS_BLOCK,
+                block: genesis_block,
                 height: 0,
             },
         );
-        chain.highest_block_hash = Some(GENESIS_BLOCK.hash());
+        chain.highest_block_hash = Some(genesis_hash);
         chain
     }
 
-    fn highest_block_entry(&self) -> Option<&BlockEntry<'t>> {
+    fn highest_block_entry(&self) -> Option<&BlockEntry> {
         self.highest_block_hash.and_then(|e| self.blocks.get(&e))
     }
 
     /// Returns the latest block on the main chain
-    pub fn highest_block(&self) -> Option<&Block<'t>> {
+    pub fn highest_block(&self) -> Option<&Block> {
         self.highest_block_entry().map(|e| &e.block)
     }
 
@@ -52,7 +54,7 @@ impl<'t> BlockChain<'t> {
     /// Returns whether the block was accepted or not.
     // TODO: currently, this only accepts blocks for which the parent is known i.e.
     //   orphans are rejected.
-    pub fn add_block(&mut self, block: &Block<'t>) -> bool {
+    pub fn add_block(&mut self, block: &Block) -> bool {
         if let Some(parent) = block
             .is_valid()
             .then(|| self.blocks.get(&block.header.prev_block_hash))
@@ -74,7 +76,7 @@ impl<'t> BlockChain<'t> {
 
 #[cfg(test)]
 mod test {
-    use crate::block::{Block, GENESIS_BLOCK};
+    use crate::block::Block;
     use crate::chain::BlockChain;
     use crate::hash::Hashable;
     use crate::tx::{Transaction, Transactions};
@@ -82,7 +84,7 @@ mod test {
     #[test]
     fn add_empty() {
         let mut chain = BlockChain::empty();
-        assert!(!chain.add_block(&GENESIS_BLOCK));
+        assert!(!chain.add_block(&Block::genesis()));
         assert_eq!(chain.main_chain_length(), 0);
     }
 
@@ -90,17 +92,18 @@ mod test {
     fn add_block() {
         let mut chain = BlockChain::new();
         assert_eq!(chain.main_chain_length(), 1);
-        assert_eq!(chain.highest_block(), Some(&GENESIS_BLOCK));
+        assert_eq!(chain.highest_block(), Some(&Block::genesis()));
+        let genesis_hash = chain.highest_block().unwrap().hash();
 
         let txs = Transaction::dummy_txs(10);
-        let first_block = Block::mine_new(GENESIS_BLOCK.hash(), 1, Transactions(&txs));
+        let first_block = Block::mine_new(genesis_hash, 1, Transactions(txs));
         assert!(chain.add_block(&first_block));
         assert_eq!(chain.main_chain_length(), 2);
         assert_eq!(chain.highest_block(), Some(&first_block));
 
         // add a forked block on genesis block
         let txs = Transaction::dummy_txs(2);
-        let second_block = Block::mine_new(GENESIS_BLOCK.hash(), 1, Transactions(&txs));
+        let second_block = Block::mine_new(genesis_hash, 1, Transactions(txs));
         assert!(chain.add_block(&second_block));
         // length is still two
         assert_eq!(chain.main_chain_length(), 2);
@@ -109,7 +112,7 @@ mod test {
 
         // add a second block on the fork
         let txs = Transaction::dummy_txs(3);
-        let third_block = Block::mine_new(second_block.hash(), 1, Transactions(&txs));
+        let third_block = Block::mine_new(second_block.hash(), 1, Transactions(txs));
         assert!(chain.add_block(&third_block));
         assert_eq!(chain.main_chain_length(), 3);
         // now, the highest block has switched

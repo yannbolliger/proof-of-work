@@ -1,5 +1,5 @@
 use crate::hash::{has_leading_zeros, Hash, Hashable, HASH_LENGTH};
-use crate::tx::{Transactions, GENESIS_TXS, GENESIS_TXS_HASH};
+use crate::tx::{Transactions, GENESIS_TXS_HASH};
 use serde::{Deserialize, Serialize};
 use std::u32;
 
@@ -56,35 +56,34 @@ impl Hashable for BlockHeader {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Block<'t> {
+pub struct Block {
     pub header: BlockHeader,
-    transactions: Transactions<'t>,
+    transactions: Transactions,
 }
 
 pub const GENESIS_NONCE: u32 = 442;
-pub const GENESIS_BLOCK: Block = Block {
-    header: BlockHeader {
-        prev_block_hash: [0; HASH_LENGTH],
-        difficulty: 1,
-        merkle_hash: GENESIS_TXS_HASH,
-        nonce: GENESIS_NONCE,
-    },
-    transactions: GENESIS_TXS,
-};
 
-impl<'t> Block<'t> {
-    pub fn new(prev_block_hash: Hash, difficulty: u32, transactions: Transactions<'t>) -> Self {
+impl Block {
+    pub fn new(prev_block_hash: Hash, difficulty: u32, transactions: Transactions) -> Self {
         Block {
             header: BlockHeader::new(prev_block_hash, transactions.hash(), difficulty),
             transactions,
         }
     }
 
-    pub fn mine_new(
-        prev_block_hash: Hash,
-        difficulty: u32,
-        transactions: Transactions<'t>,
-    ) -> Self {
+    pub fn genesis() -> Self {
+        Block {
+            header: BlockHeader {
+                prev_block_hash: [0; HASH_LENGTH],
+                difficulty: 1,
+                merkle_hash: GENESIS_TXS_HASH,
+                nonce: GENESIS_NONCE,
+            },
+            transactions: Transactions::genesis(),
+        }
+    }
+
+    pub fn mine_new(prev_block_hash: Hash, difficulty: u32, transactions: Transactions) -> Self {
         Block {
             header: BlockHeader::mine_new(prev_block_hash, transactions.hash(), difficulty),
             transactions,
@@ -96,7 +95,7 @@ impl<'t> Block<'t> {
     }
 }
 
-impl<'t> Hashable for Block<'t> {
+impl Hashable for Block {
     /// A block's hash is only its headers hash.
     fn hash(&self) -> Hash {
         self.header.hash()
@@ -105,7 +104,7 @@ impl<'t> Hashable for Block<'t> {
 
 #[cfg(test)]
 mod test {
-    use crate::block::{Block, BlockHeader, GENESIS_BLOCK, GENESIS_NONCE};
+    use crate::block::{Block, BlockHeader, GENESIS_NONCE};
     use crate::hash::{Hash, Hashable, HASH_LENGTH};
     use crate::tx::{Transaction, Transactions};
 
@@ -120,17 +119,18 @@ mod test {
     #[test]
     fn mined_block_valid() {
         let txs = Transaction::dummy_txs(10);
-        assert!(!Block::new(PREVIOUS_HASH, 2, Transactions(&txs)).is_valid());
-        assert!(Block::mine_new(PREVIOUS_HASH, 2, Transactions(&txs)).is_valid());
+        assert!(!Block::new(PREVIOUS_HASH, 2, Transactions(txs.clone())).is_valid());
+        assert!(Block::mine_new(PREVIOUS_HASH, 2, Transactions(txs)).is_valid());
     }
 
     #[test]
     fn genesis_block_is_valid() {
-        assert!(GENESIS_BLOCK.is_valid());
+        let genesis_block = Block::genesis();
+        assert!(genesis_block.is_valid());
         assert_eq!(
-            GENESIS_BLOCK.transactions.hash(),
-            GENESIS_BLOCK.header.merkle_hash
+            genesis_block.transactions.hash(),
+            genesis_block.header.merkle_hash
         );
-        assert_eq!(GENESIS_BLOCK.header.solve(), GENESIS_NONCE);
+        assert_eq!(genesis_block.header.solve(), GENESIS_NONCE);
     }
 }

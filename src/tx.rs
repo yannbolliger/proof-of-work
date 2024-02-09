@@ -40,10 +40,15 @@ impl Hashable for Transaction {
 }
 
 /// Implements merkle tree hashing for transactions
-#[derive(Copy, Clone, Eq, PartialEq, Debug)]
-pub struct Transactions<'t>(pub &'t [Transaction]);
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct Transactions(pub Vec<Transaction>);
 
-pub const GENESIS_TXS: Transactions = Transactions(&[GENESIS_TX]);
+impl Transactions {
+    pub fn genesis() -> Self {
+        Transactions(vec![GENESIS_TX])
+    }
+}
+
 pub const GENESIS_TXS_HASH: Hash = [
     92, 199, 78, 195, 125, 214, 27, 112, 9, 218, 38, 149, 15, 61, 223, 51, 238, 99, 110, 3, 97, 19,
     152, 59, 226, 207, 144, 91, 101, 237, 133, 25,
@@ -67,21 +72,21 @@ fn hash(txs: &[Transaction]) -> Hash {
     }
 }
 
-impl<'t> Hashable for Transactions<'t> {
+impl Hashable for Transactions {
     fn hash(&self) -> Hash {
-        hash(self.0)
+        hash(&self.0)
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::hash::{Hashable, HASH_LENGTH};
-    use crate::tx::{Transaction, Transactions, GENESIS_TXS, GENESIS_TXS_HASH};
+    use crate::tx::{Transaction, Transactions, GENESIS_TXS_HASH};
 
     #[test]
     #[should_panic]
     fn test_empty() {
-        Transactions(&[]).hash();
+        Transactions(vec![]).hash();
     }
 
     #[test]
@@ -92,13 +97,13 @@ mod test {
             amount: 100,
         };
         assert_eq!(
-            Transactions(&[tx.clone(), tx.clone()]).hash(),
-            Transactions(&[tx]).hash()
+            Transactions(vec![tx.clone(), tx.clone()]).hash(),
+            Transactions(vec![tx]).hash()
         );
     }
 
     #[test]
     fn test_many() {
-        assert_eq!(GENESIS_TXS.hash(), GENESIS_TXS_HASH);
+        assert_eq!(Transactions::genesis().hash(), GENESIS_TXS_HASH);
     }
 }
