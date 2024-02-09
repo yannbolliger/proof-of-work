@@ -1,36 +1,16 @@
-use crate::block::Block;
-use crate::chain::BlockChain;
-use crate::hash::{Hash, Hashable};
-use crate::tx::{Transaction, Transactions};
+use repyh_proof_of_work::*;
 use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
-use std::thread;
-
-// TODO: Implement a difficulty based on the block height and take it into account when verifying
-//   new blocks.
-pub const GLOBAL_DIFFICULTY: u32 = 2;
-
-pub enum Message {
-    /// A new node joins the network and announces its address
-    Connect(IpAddr),
-
-    /// Announces known/live node addresses (excluding the node's own address) to the network
-    Addr(Vec<IpAddr>),
-
-    /// Proposes transactions for inclusion into blocks
-    Tx(Transactions),
-
-    /// Announces the mining of a new block
-    NewBlock(Block),
-    // TODO: for now a node needs to have been around from the first mining to participate
-    //   add messages for synchronising past blocks
-}
+use tokio::task;
+use tokio::task::JoinHandle;
 
 pub struct Node {
     address: IpAddr,
     peers: HashSet<IpAddr>,
     mempool: HashMap<Hash, Transaction>,
     chain: BlockChain,
+    txs_to_mine: Transactions,
+    mining_task: Option<JoinHandle<()>>,
 }
 
 impl Node {
@@ -39,6 +19,8 @@ impl Node {
             mempool: HashMap::new(),
             chain: BlockChain::new(),
             peers: HashSet::new(),
+            txs_to_mine: Transactions(vec![]),
+            mining_task: None,
             address,
         }
     }
@@ -78,16 +60,28 @@ impl Node {
             Message::NewBlock(block) => {
                 let is_new = self.chain.add_block(&block);
                 if is_new && self.chain.highest_block() == &block {
-                    // TODO: restart mining with the new `self.chain.highest_block()` as parent
-                    // stop previous mining process, return txs to mempool
+                    // stop previous mining task
+                    if let Some(task) = &self.mining_task {
+                        task.abort();
+                        self.mempool
+                            .extend(self.txs_to_mine.0.drain(..).map(|t| (t.hash(), t)));
+                    }
 
                     // start mining
                     let prev_hash = self.chain.highest_block().hash();
-                    let txs = Transactions(self.mempool.drain().map(|(_, t)| t).collect());
-                    thread::spawn(move || Block::mine_new(prev_hash, GLOBAL_DIFFICULTY, txs));
+                    self.txs_to_mine = Transactions(self.mempool.drain().map(|(_, t)| t).collect());
+                    let txs = self.txs_to_mine.clone();
+
+                    self.mining_task = Some(task::spawn_blocking(move || {
+                        let mined_block = Block::mine_new(prev_hash, GLOBAL_DIFFICULTY, txs);
+                        // TODO: send mined block to network and ourselves
+                    }));
                 }
                 is_new.then_some(Message::NewBlock(block))
             }
         }
     }
 }
+
+#[tokio::main]
+async fn main() {}
