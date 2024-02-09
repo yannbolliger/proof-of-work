@@ -64,7 +64,7 @@ impl Hashable for BlockHeader {
     }
 }
 
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Block {
     pub header: BlockHeader,
     transactions: Transactions,

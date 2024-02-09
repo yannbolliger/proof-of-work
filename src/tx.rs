@@ -1,9 +1,10 @@
-use crate::hash::{Hash, Hashable, HASH_LENGTH};
+use crate::hash::{B58Encode, Hash, Hashable, HASH_LENGTH};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Debug, Formatter};
 
 type Address = Hash;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct Transaction {
     spender: Address,
     receiver: Address,
@@ -11,7 +12,6 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    #[cfg(test)]
     pub fn dummy_txs(len: u32) -> Vec<Self> {
         (1..len)
             .map(|i: u32| Transaction {
@@ -20,6 +20,18 @@ impl Transaction {
                 amount: i,
             })
             .collect::<Vec<_>>()
+    }
+}
+
+impl Debug for Transaction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Transaction {{ spender: {}, receiver: {}, amount: {} }}",
+            self.spender.encode(),
+            self.receiver.encode(),
+            self.amount
+        )
     }
 }
 
@@ -40,7 +52,7 @@ impl Hashable for Transaction {
 }
 
 /// Implements merkle tree hashing for transactions
-#[derive(Clone, Eq, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Transactions(pub Vec<Transaction>);
 
 impl Transactions {
