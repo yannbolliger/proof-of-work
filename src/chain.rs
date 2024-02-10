@@ -8,6 +8,8 @@ struct BlockEntry {
 }
 
 /// Structure holding all the blocks of this blockchain.
+// TODO: This currently only cares about blocks & the main chain. Implement a quick way
+//  to query committed transactions (i.e. transactions on the main chain).
 pub struct BlockChain {
     blocks: HashMap<Hash, BlockEntry>,
     // Hash serving as a direct access pointer to the highest block on the main chain

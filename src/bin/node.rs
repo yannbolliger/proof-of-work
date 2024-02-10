@@ -10,10 +10,15 @@ use tokio::sync::RwLock;
 use tokio::task;
 use tokio::task::JoinHandle;
 
+/// A full node running on the blockchain.
 pub struct Node {
+    /// The node's own address
     address: SocketAddr,
+    /// The known network peers
     peers: HashSet<SocketAddr>,
+    /// Transactions proposed for inclusion in a block
     mempool: HashMap<Hash, Transaction>,
+    /// The local copy of the blockchain
     chain: BlockChain,
 }
 
@@ -64,38 +69,49 @@ impl Node {
 
             // add broadcast txs to mempool and rebroadcast new ones
             Message::Tx(txs) => {
+                // filter only the unknown transactions
+                // TODO: this currently only looks at the mempool. However, it should also check
+                //  whether a transaction was already added/comitted to the chain.
                 let new_txs = txs
                     .0
                     .into_iter()
                     .map(|t| (t.hash(), t))
                     .filter(|(h, _)| !self.mempool.contains_key(h))
                     .collect::<Vec<_>>();
+
+                // TODO: once transactions get more integrity (like signing/ordering etc. see also
+                //  [Transaction], we need to validate them here before adding them to the mempool
                 self.mempool.extend(new_txs.clone());
+
+                // rebroadcast transactions we didn't yet know about
                 (
                     (!new_txs.is_empty()).then(|| {
                         Message::Tx(Transactions(new_txs.into_iter().map(|(_, t)| t).collect()))
                     }),
-                    Start,
+                    Start, // start mining if not already in process
                 )
             }
 
             // adds a new block to chain, if valid and rebroadcasts if valid & new
             Message::NewBlock(block) => {
                 let is_new = self.add_block(&block);
-                let restart = if self.chain.highest_block() == &block {
+                // if the main chain has updated, we need to restart the mining with the
+                // new highest block as parent
+                let cmd = if self.chain.highest_block() == &block {
                     Restart
                 } else {
-                    Start
+                    Start // otherwise, we still start mining if we were done
                 };
-                (is_new.then_some(Message::NewBlock(block)), restart)
+                (is_new.then_some(Message::NewBlock(block)), cmd)
             }
         }
     }
 
+    /// Adds a block to the chain and if valid, removes the transactions
+    /// that it includes from the mempool.
     fn add_block(&mut self, block: &Block) -> bool {
         let is_new = self.chain.add_block(block);
         if is_new {
-            // Remove all txs from the mempool that are included in this block
             let txs: HashSet<Hash> = block.transactions.0.iter().map(|t| t.hash()).collect();
             self.mempool.retain(|h, _| !txs.contains(h));
         }
@@ -103,10 +119,16 @@ impl Node {
     }
 }
 
+/// Start a new mining process.
 async fn start_mining(node_state: Arc<RwLock<Node>>) -> io::Result<()> {
     let (prev_hash, txs) = {
         let node = node_state.read().await;
+        if node.mempool.is_empty() {
+            println!("No txs to mine.");
+            return Ok(());
+        };
         let prev_hash = node.chain.highest_block().hash();
+        // Take "some" transactions from the pool
         let txs = node
             .mempool
             .iter()
@@ -115,30 +137,33 @@ async fn start_mining(node_state: Arc<RwLock<Node>>) -> io::Result<()> {
             .collect::<Vec<_>>();
         (prev_hash, txs)
     };
-    if txs.is_empty() {
-        println!("No txs to mine.");
-        return Ok(());
-    };
 
-    let task = task::spawn_blocking(move || {
+    // Start the mining process (blocking because CPU-bound)
+    // Note that no lock is kept during the mining.
+    let mined_block = task::spawn_blocking(move || {
         Block::mine_new(prev_hash, GLOBAL_DIFFICULTY, Transactions(txs))
-    });
-
-    let mined_block = task.await?;
+    })
+    .await?;
     println!("Mined {:?}", mined_block.header);
-    {
+    let valid = {
         let mut node = node_state.write().await;
-        node.add_block(&mined_block);
+        node.add_block(&mined_block)
+    };
+    if valid {
+        broadcast(node_state, &Message::NewBlock(mined_block)).await
+    } else {
+        Ok(())
     }
-    broadcast(node_state, &Message::NewBlock(mined_block)).await
 }
 
 async fn broadcast(node_state: Arc<RwLock<Node>>, message: &Message) -> io::Result<()> {
+    println!("Send {:?}", &message);
     let node = node_state.read().await;
     message.broadcast(node.peers.iter()).await
 }
 
-const DEFAULT_SOCKET: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7000);
+// TODO: there is no limit (in the protocol) on the message size. The receiving will break for
+//  too long messages. Implement either a limit or continuous reading on the socket to fix this.
 const RCV_BUFFER_LEN: usize = 1024;
 
 async fn accept_message(listener: &TcpListener) -> io::Result<Message> {
@@ -148,8 +173,12 @@ async fn accept_message(listener: &TcpListener) -> io::Result<Message> {
     Message::try_from(&buf[..n])
 }
 
+/// By default, a node will try to bind itself to `localhost:7000`.
+const DEFAULT_SOCKET: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7000);
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    // read initial peer address from the CLI arguments
     let initial_peers: Vec<SocketAddr> = std::env::args().filter_map(|s| s.parse().ok()).collect();
 
     // Try to bind to default port or take random port if already in use
@@ -157,12 +186,13 @@ async fn main() -> io::Result<()> {
         Ok(l) => l,
         Err(_) => TcpListener::bind("127.0.0.1:0").await?,
     };
-    let address = listener.local_addr().unwrap();
+    let address = listener.local_addr()?;
     println!(
         "Node started at {} with initial peers: {:?}",
         address, initial_peers
     );
 
+    // The entire state of the node
     let node_state = Arc::new(RwLock::new(Node::new(address, &initial_peers)));
     let mut mining_task: Option<JoinHandle<_>> = None;
 
@@ -170,6 +200,9 @@ async fn main() -> io::Result<()> {
     broadcast(node_state.clone(), &Message::Connect(address)).await?;
 
     println!("Starting to process...");
+    // the event loop
+    // TODO: the event loop is currently synchronous but spawns off the mining.
+    //  The next iteration should be to spawn off a task for each incoming message.
     while let Ok(message) = accept_message(&listener).await {
         println!("Got {:?}", message);
 
@@ -198,7 +231,6 @@ async fn main() -> io::Result<()> {
 
         // Send replies to the network if needed
         if let Some(r) = reply {
-            println!("Send {:?}", &r);
             broadcast(node_state.clone(), &r).await?;
         }
     }
