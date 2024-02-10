@@ -1,14 +1,28 @@
-use crate::hash::{has_leading_zeros, Hash, Hashable, HASH_LENGTH};
+use crate::hash::{has_leading_zeros, B58Encode, Hash, Hashable, HASH_LENGTH};
 use crate::tx::{Transactions, GENESIS_TXS_HASH};
 use serde::{Deserialize, Serialize};
+use std::fmt::{Debug, Formatter};
 use std::u32;
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct BlockHeader {
     pub prev_block_hash: Hash,
     merkle_hash: Hash,
     difficulty: u32,
     pub nonce: u32,
+}
+
+impl Debug for BlockHeader {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "BlockHeader {{ prev_block_hash: {}, merkle_hash: {}, difficulty: {}, nonce: {} }}",
+            self.prev_block_hash.encode(),
+            self.merkle_hash.encode(),
+            self.difficulty,
+            self.nonce
+        )
+    }
 }
 
 pub const GENESIS_NONCE: u32 = 442;
