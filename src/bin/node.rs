@@ -1,6 +1,7 @@
 use crate::MiningCommand::{Keep, Restart, Start};
 use repyh_proof_of_work::*;
 use std::collections::{HashMap, HashSet};
+use std::io;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
@@ -102,12 +103,12 @@ impl Node {
         is_new
     }
 
-    pub async fn broadcast(&self, message: Message) {
-        broadcast(self.peers.iter(), message).await
+    pub async fn broadcast(&self, message: &Message) -> io::Result<()> {
+        repyh_proof_of_work::broadcast(self.peers.iter(), message).await
     }
 }
 
-pub async fn start_mining(node_state: Arc<RwLock<Node>>) {
+async fn start_mining(node_state: Arc<RwLock<Node>>) -> io::Result<()> {
     let (prev_hash, txs) = {
         let node = node_state.read().await;
         let prev_hash = node.chain.highest_block().hash();
@@ -121,31 +122,45 @@ pub async fn start_mining(node_state: Arc<RwLock<Node>>) {
     };
     if txs.is_empty() {
         println!("No txs to mine.");
-        return;
+        return Ok(());
     };
 
     let task = task::spawn_blocking(move || {
         Block::mine_new(prev_hash, GLOBAL_DIFFICULTY, Transactions(txs))
     });
 
-    if let Ok(mined_block) = task.await {
-        println!("Mined {:?}", mined_block.header);
+    let mined_block = task.await?;
+    println!("Mined {:?}", mined_block.header);
+    {
         let mut node = node_state.write().await;
         node.add_block(&mined_block);
-        node.broadcast(Message::NewBlock(mined_block)).await
     }
+    broadcast(node_state, &Message::NewBlock(mined_block)).await
+}
+
+async fn broadcast(node_state: Arc<RwLock<Node>>, message: &Message) -> io::Result<()> {
+    let node = node_state.read().await;
+    node.broadcast(message).await
 }
 
 const DEFAULT_SOCKET: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7000);
+const RCV_BUFFER_LEN: usize = 1024;
+
+async fn accept_message(listener: &TcpListener) -> io::Result<Message> {
+    let (mut socket, _) = listener.accept().await?;
+    let mut buf = [0; RCV_BUFFER_LEN];
+    let n = socket.read(&mut buf).await?;
+    Message::try_from(&buf[..n])
+}
 
 #[tokio::main]
-async fn main() {
+async fn main() -> io::Result<()> {
     let initial_peers: Vec<SocketAddr> = std::env::args().filter_map(|s| s.parse().ok()).collect();
 
     // Try to bind to default port or take random port if already in use
     let listener = match TcpListener::bind(DEFAULT_SOCKET).await {
         Ok(l) => l,
-        Err(_) => TcpListener::bind("127.0.0.1:0").await.unwrap(),
+        Err(_) => TcpListener::bind("127.0.0.1:0").await?,
     };
     let address = listener.local_addr().unwrap();
     println!(
@@ -154,19 +169,13 @@ async fn main() {
     );
 
     let node_state = Arc::new(RwLock::new(Node::new(address, &initial_peers)));
-    let mut mining_task: Option<JoinHandle<()>> = None;
+    let mut mining_task: Option<JoinHandle<_>> = None;
 
     // Announce ourselves to network
-    {
-        let node = node_state.read().await;
-        node.broadcast(Message::Connect(address)).await;
-    }
+    broadcast(node_state.clone(), &Message::Connect(address)).await?;
 
     println!("Starting to process...");
-    while let Ok((mut socket, _)) = listener.accept().await {
-        let mut buf = [0; 1024];
-        let n = socket.read(&mut buf).await.unwrap();
-        let message: Message = bincode::deserialize(&buf[0..n]).unwrap();
+    while let Ok(message) = accept_message(&listener).await {
         println!("Got {:?}", message);
 
         let (reply, mining_command) = {
@@ -195,8 +204,8 @@ async fn main() {
         // Send replies to the network if needed
         if let Some(r) = reply {
             println!("Send {:?}", &r);
-            let node = node_state.read().await;
-            node.broadcast(r).await;
+            broadcast(node_state.clone(), &r).await?;
         }
     }
+    Ok(())
 }

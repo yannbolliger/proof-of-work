@@ -3,6 +3,8 @@ pub use crate::chain::BlockChain;
 pub use crate::hash::{Hash, Hashable};
 pub use crate::tx::{Transaction, Transactions};
 use serde::{Deserialize, Serialize};
+use std::io;
+use std::io::ErrorKind;
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
@@ -33,10 +35,28 @@ pub enum Message {
     //   add messages for synchronising past blocks
 }
 
-pub async fn broadcast<'a, I: Iterator<Item = &'a SocketAddr>>(addrs: I, message: Message) {
-    let bytes = bincode::serialize(&message).unwrap();
-    for peer in addrs {
-        let mut stream = TcpStream::connect(peer).await.unwrap();
-        stream.write_all(&bytes).await.unwrap();
+impl TryFrom<&[u8]> for Message {
+    type Error = io::Error;
+
+    fn try_from(value: &[u8]) -> io::Result<Self> {
+        bincode::deserialize(value).map_err(|e| io::Error::new(ErrorKind::InvalidData, e))
     }
+}
+
+impl From<&Message> for Vec<u8> {
+    fn from(value: &Message) -> Self {
+        bincode::serialize(&value).expect("can always serialize a message")
+    }
+}
+
+pub async fn broadcast<'a, I: Iterator<Item = &'a SocketAddr>>(
+    addrs: I,
+    message: &Message,
+) -> io::Result<()> {
+    let bytes: Vec<u8> = message.into();
+    for peer in addrs {
+        let mut stream = TcpStream::connect(peer).await?;
+        stream.write_all(&bytes).await?;
+    }
+    Ok(())
 }
