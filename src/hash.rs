@@ -1,8 +1,10 @@
 use bs58::encode;
 use sha2::{Digest, Sha256};
 
-/// The length of a `Hash` (in bytes).
+/// The length of a [`Hash`] (in bytes).
 pub const HASH_LENGTH: usize = 32;
+
+/// Bytes representing a [`Sha256`] hash.
 pub type Hash = [u8; HASH_LENGTH];
 
 fn hash(bytes: &[u8]) -> Hash {
@@ -11,7 +13,10 @@ fn hash(bytes: &[u8]) -> Hash {
     hasher.finalize().into()
 }
 
+// Because Hash is only a type alias, we can't implement methods on it directly but
+// need to do it via a trait.
 pub trait B58Encode {
+    /// Encode this as base58 string.
     fn encode(&self) -> String;
 }
 
@@ -25,11 +30,14 @@ pub fn has_leading_zeros(s: &Hash, leading: usize) -> bool {
     s[..leading].iter().all(|b| *b == 0)
 }
 
+/// Trait making [Sha256] hashing available on the implementor.
 pub trait Hashable {
     fn hash_bytes(bytes: &[u8]) -> Hash {
         hash(bytes)
     }
 
+    /// Hash this with [Sha256].
+    /// Most implementations can use [Self::hash_bytes] and just provide all their bytes.
     fn hash(&self) -> Hash;
 }
 

@@ -89,7 +89,7 @@ impl Transactions {
     }
 }
 
-/// The merkle tree hash of `Transactions::genesis()` for inclusion in the genesis block.
+/// The merkle tree hash of [`Transactions::genesis()`] for inclusion in the genesis block.
 pub const GENESIS_TXS_HASH: Hash = [
     82, 124, 234, 124, 91, 88, 141, 159, 176, 214, 86, 126, 142, 46, 16, 73, 125, 96, 127, 71, 253,
     45, 55, 100, 237, 182, 18, 51, 33, 131, 181, 243,

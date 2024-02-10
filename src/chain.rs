@@ -7,12 +7,15 @@ struct BlockEntry {
     height: usize,
 }
 
+/// Structure holding all the blocks of this blockchain.
 pub struct BlockChain {
     blocks: HashMap<Hash, BlockEntry>,
+    // Hash serving as a direct access pointer to the highest block on the main chain
     highest_block_hash: Hash,
 }
 
 impl BlockChain {
+    /// Create a new blockchain with only the genesis block.
     pub fn new() -> Self {
         let genesis_block = Block::genesis();
         let genesis_hash = genesis_block.hash();
@@ -34,11 +37,12 @@ impl BlockChain {
             .expect("highest block hash must be in the chain")
     }
 
-    /// Returns the latest block on the main chain
+    /// Returns the latest/highest block on the main chain
     pub fn highest_block(&self) -> &Block {
         &self.highest_block_entry().block
     }
 
+    /// Returns the length (i.e. height + 1) of the longest chain (i.e. the main chain).
     pub fn main_chain_length(&self) -> usize {
         self.highest_block_entry().height + 1
     }
@@ -58,12 +62,19 @@ impl BlockChain {
                 height: parent.height + 1,
             };
             let hash = block.hash();
+            // Update the main-chain pointer if this block is now the highest
             if entry.height >= self.main_chain_length() {
                 self.highest_block_hash = hash;
             }
             return self.blocks.insert(hash, entry).is_none();
         }
         false
+    }
+}
+
+impl Default for BlockChain {
+    fn default() -> Self {
+        BlockChain::new()
     }
 }
 

@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::u32;
 
+/// Fully identifies a block on the chain.
+/// A block is valid iff hashing all its bytes results in a hash with at least `difficulty` leading
+/// zero bytes.
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct BlockHeader {
     pub prev_block_hash: Hash,
@@ -25,8 +28,10 @@ impl Debug for BlockHeader {
     }
 }
 
+/// The nonce making [GENESIS_HEADER] valid.
 pub const GENESIS_NONCE: u32 = 437;
 
+/// The hard-coded first block (header) on this chain.
 pub const GENESIS_HEADER: BlockHeader = BlockHeader {
     prev_block_hash: [0; HASH_LENGTH],
     difficulty: 1,
@@ -36,7 +41,7 @@ pub const GENESIS_HEADER: BlockHeader = BlockHeader {
 
 impl BlockHeader {
     /// Creates a new block header with 0 nonce.
-    /// This block header is only valid after solving it.
+    /// This block header is only valid after [Self::solve]'ing it and changing the nonce.
     pub fn new(prev_block_hash: Hash, merkle_hash: Hash, difficulty: u32) -> Self {
         BlockHeader {
             prev_block_hash,
@@ -46,7 +51,7 @@ impl BlockHeader {
         }
     }
 
-    /// Creates a new block and mines/solves it such that the hash
+    /// Creates a new, _valid_ block. I.e. mines/solves it such that the hash
     /// satisfies the given difficulty.
     pub fn mine_new(prev_block_hash: Hash, merkle_hash: Hash, difficulty: u32) -> Self {
         let initial = Self::new(prev_block_hash, merkle_hash, difficulty);
@@ -56,7 +61,7 @@ impl BlockHeader {
         }
     }
 
-    /// Mines the nonce needed to solve this block.
+    /// Mines the nonce needed to solve this block/make it valid.
     fn solve(&self) -> u32 {
         (0..u32::MAX)
             .find(|n| {
@@ -78,6 +83,10 @@ impl Hashable for BlockHeader {
     }
 }
 
+/// A full block on this chain.
+/// A block is valid iff
+/// - its [BlockHeader] is valid
+/// - the hash of its [Transactions] is equal to the merkle_tree_hash of its [BlockHeader]
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Block {
     pub header: BlockHeader,
@@ -87,6 +96,8 @@ pub struct Block {
 pub const MAX_TXS: usize = 100;
 
 impl Block {
+    /// Create a new block. This block is only valid after mining/solving its header
+    /// and changing the nonce.
     pub fn new(prev_block_hash: Hash, difficulty: u32, transactions: Transactions) -> Self {
         Block {
             header: BlockHeader::new(prev_block_hash, transactions.hash(), difficulty),
@@ -94,6 +105,7 @@ impl Block {
         }
     }
 
+    /// Returns the first block on this chain.
     pub fn genesis() -> Self {
         Block {
             header: GENESIS_HEADER,
@@ -101,6 +113,7 @@ impl Block {
         }
     }
 
+    /// Creates a new, _valid_ block. I.e. mines/solves its nonce.
     pub fn mine_new(prev_block_hash: Hash, difficulty: u32, transactions: Transactions) -> Self {
         Block {
             header: BlockHeader::mine_new(prev_block_hash, transactions.hash(), difficulty),
@@ -114,7 +127,7 @@ impl Block {
 }
 
 impl Hashable for Block {
-    /// A block's hash is only its headers hash.
+    /// A block's hash is only its header's hash.
     fn hash(&self) -> Hash {
         self.header.hash()
     }
