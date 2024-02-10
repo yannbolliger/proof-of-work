@@ -86,6 +86,7 @@ mod test {
     use crate::chain::BlockChain;
     use crate::hash::Hashable;
     use crate::tx::{Transaction, Transactions};
+    use crate::GLOBAL_DIFFICULTY;
 
     #[test]
     fn add_block() {
@@ -95,14 +96,14 @@ mod test {
         let genesis_hash = chain.highest_block().hash();
 
         let txs = Transaction::dummy_txs(10);
-        let first_block = Block::mine_new(genesis_hash, 1, Transactions(txs));
+        let first_block = Block::mine_new(genesis_hash, GLOBAL_DIFFICULTY, Transactions(txs));
         assert!(chain.add_block(&first_block));
         assert_eq!(chain.main_chain_length(), 2);
         assert_eq!(chain.highest_block(), &first_block);
 
         // add a forked block on genesis block
         let txs = Transaction::dummy_txs(2);
-        let second_block = Block::mine_new(genesis_hash, 1, Transactions(txs));
+        let second_block = Block::mine_new(genesis_hash, GLOBAL_DIFFICULTY, Transactions(txs));
         assert!(chain.add_block(&second_block));
         // length is still two
         assert_eq!(chain.main_chain_length(), 2);
@@ -111,7 +112,8 @@ mod test {
 
         // add a second block on the fork
         let txs = Transaction::dummy_txs(3);
-        let third_block = Block::mine_new(second_block.hash(), 1, Transactions(txs));
+        let third_block =
+            Block::mine_new(second_block.hash(), GLOBAL_DIFFICULTY, Transactions(txs));
         assert!(chain.add_block(&third_block));
         assert_eq!(chain.main_chain_length(), 3);
         // now, the highest block has switched

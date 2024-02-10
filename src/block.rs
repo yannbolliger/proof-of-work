@@ -1,12 +1,14 @@
 use crate::hash::{has_leading_zeros, B58Encode, Hash, Hashable, HASH_LENGTH};
 use crate::tx::{Transactions, GENESIS_TXS_HASH};
+use crate::GLOBAL_DIFFICULTY;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Debug, Formatter};
 use std::u32;
 
 /// Fully identifies a block on the chain.
 /// A block is valid iff hashing all its bytes results in a hash with at least `difficulty` leading
-/// zero bytes.
+/// zero bytes and the difficulty is equal to the global constant.
+// TODO: once the difficulty is a function, this should be check as well
 #[derive(Serialize, Deserialize, Clone, Eq, PartialEq)]
 pub struct BlockHeader {
     pub prev_block_hash: Hash,
@@ -73,7 +75,8 @@ impl BlockHeader {
     }
 
     pub fn is_valid(&self) -> bool {
-        has_leading_zeros(&self.hash(), self.difficulty as usize)
+        (self.difficulty == GLOBAL_DIFFICULTY || self.merkle_hash == GENESIS_TXS_HASH)
+            && has_leading_zeros(&self.hash(), self.difficulty as usize)
     }
 }
 
