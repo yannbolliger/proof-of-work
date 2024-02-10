@@ -46,7 +46,6 @@ impl Node {
                     Message::Addr(
                         self.peers
                             .iter()
-                            .filter(|&a| a != &addr)
                             .take(9)
                             .chain(&[self.address])
                             .cloned()
@@ -102,10 +101,6 @@ impl Node {
         }
         is_new
     }
-
-    pub async fn broadcast(&self, message: &Message) -> io::Result<()> {
-        repyh_proof_of_work::broadcast(self.peers.iter(), message).await
-    }
 }
 
 async fn start_mining(node_state: Arc<RwLock<Node>>) -> io::Result<()> {
@@ -140,7 +135,7 @@ async fn start_mining(node_state: Arc<RwLock<Node>>) -> io::Result<()> {
 
 async fn broadcast(node_state: Arc<RwLock<Node>>, message: &Message) -> io::Result<()> {
     let node = node_state.read().await;
-    node.broadcast(message).await
+    message.broadcast(node.peers.iter()).await
 }
 
 const DEFAULT_SOCKET: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7000);

@@ -1,4 +1,4 @@
-use repyh_proof_of_work::{broadcast, Message, Transaction, Transactions};
+use repyh_proof_of_work::{Message, Transaction, Transactions};
 use std::net::SocketAddr;
 use tokio::io;
 
@@ -6,11 +6,9 @@ use tokio::io;
 async fn main() -> io::Result<()> {
     let nodes: Vec<SocketAddr> = std::env::args().filter_map(|s| s.parse().ok()).collect();
 
-    broadcast(
-        nodes.iter(),
-        &Message::Tx(Transactions(Transaction::dummy_txs(10))),
-    )
-    .await?;
+    Message::Tx(Transactions(Transaction::dummy_txs(10)))
+        .broadcast(nodes.iter())
+        .await?;
     println!("Done proposing transactions to {:?}", nodes);
     Ok(())
 }
