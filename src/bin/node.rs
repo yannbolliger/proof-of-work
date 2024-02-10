@@ -81,7 +81,7 @@ impl Node {
 
             // adds a new block to chain, if valid and rebroadcasts if valid & new
             Message::NewBlock(block) => {
-                let is_new = self.chain.add_block(&block);
+                let is_new = self.add_block(&block);
                 let restart = if self.chain.highest_block() == &block {
                     Restart
                 } else {
@@ -90,6 +90,16 @@ impl Node {
                 (is_new.then_some(Message::NewBlock(block)), restart)
             }
         }
+    }
+
+    fn add_block(&mut self, block: &Block) -> bool {
+        let is_new = self.chain.add_block(block);
+        if is_new {
+            // Remove all txs from the mempool that are included in this block
+            let txs: HashSet<Hash> = block.transactions.0.iter().map(|t| t.hash()).collect();
+            self.mempool.retain(|h, _| !txs.contains(h));
+        }
+        is_new
     }
 
     pub async fn broadcast(&self, message: Message) {
@@ -106,27 +116,22 @@ pub async fn start_mining(node_state: Arc<RwLock<Node>>) {
             .iter()
             .take(MAX_TXS)
             .map(|(_, t)| t.clone())
-            .collect();
+            .collect::<Vec<_>>();
         (prev_hash, txs)
+    };
+    if txs.is_empty() {
+        println!("No txs to mine.");
+        return;
     };
 
     let task = task::spawn_blocking(move || {
-        println!("start mining");
         Block::mine_new(prev_hash, GLOBAL_DIFFICULTY, Transactions(txs))
     });
 
     if let Ok(mined_block) = task.await {
         println!("Mined {:?}", mined_block.header);
         let mut node = node_state.write().await;
-        node.chain.add_block(&mined_block);
-        let mined_txs: HashSet<Hash> = mined_block
-            .transactions
-            .0
-            .iter()
-            .map(|t| t.hash())
-            .collect();
-        // Only keep txs that weren't included in this block
-        node.mempool.retain(|h, _| !mined_txs.contains(h));
+        node.add_block(&mined_block);
         node.broadcast(Message::NewBlock(mined_block)).await
     }
 }
