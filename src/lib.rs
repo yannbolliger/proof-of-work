@@ -1,4 +1,4 @@
-pub use crate::block::Block;
+pub use crate::block::{Block, MAX_TXS};
 pub use crate::chain::BlockChain;
 pub use crate::hash::{Hash, Hashable};
 pub use crate::tx::{Transaction, Transactions};

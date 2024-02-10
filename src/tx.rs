@@ -13,7 +13,7 @@ pub struct Transaction {
 
 impl Transaction {
     pub fn dummy_txs(len: u32) -> Vec<Self> {
-        (1..len)
+        (1..=len)
             .map(|i: u32| Transaction {
                 spender: [i as u8; HASH_LENGTH],
                 receiver: [(i + 1) as u8; HASH_LENGTH],

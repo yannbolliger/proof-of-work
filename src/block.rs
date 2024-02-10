@@ -67,8 +67,10 @@ impl Hashable for BlockHeader {
 #[derive(Clone, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Block {
     pub header: BlockHeader,
-    transactions: Transactions,
+    pub transactions: Transactions,
 }
+
+pub const MAX_TXS: usize = 100;
 
 impl Block {
     pub fn new(prev_block_hash: Hash, difficulty: u32, transactions: Transactions) -> Self {

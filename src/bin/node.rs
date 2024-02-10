@@ -1,8 +1,11 @@
+use crate::MiningCommand::{Keep, Restart, Start};
 use repyh_proof_of_work::*;
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
+use std::sync::Arc;
+use tokio::io::AsyncReadExt;
+use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 use tokio::task;
 use tokio::task::JoinHandle;
 
@@ -11,8 +14,12 @@ pub struct Node {
     peers: HashSet<SocketAddr>,
     mempool: HashMap<Hash, Transaction>,
     chain: BlockChain,
-    txs_to_mine: Transactions,
-    mining_task: Option<JoinHandle<()>>,
+}
+
+enum MiningCommand {
+    Start,
+    Restart,
+    Keep,
 }
 
 impl Node {
@@ -21,34 +28,38 @@ impl Node {
             mempool: HashMap::new(),
             chain: BlockChain::new(),
             peers: peers.iter().cloned().collect(),
-            txs_to_mine: Transactions(vec![]),
-            mining_task: None,
             address,
         }
     }
 
-    pub fn handle(&mut self, message: Message) -> Option<Message> {
+    /// Handles the state transitions of the node in response to the given message.
+    /// Returns an optional reply to broadcast back to the network and instructions whether
+    /// a mining process should be (re-)started.
+    fn handle(&mut self, message: Message) -> (Option<Message>, MiningCommand) {
         match message {
             // if a new peer connects
-            Message::Connect(addr) if addr == self.address => None,
+            Message::Connect(addr) if addr == self.address => (None, Keep),
             // ... and is not ourselves, add it to the peers and broadcast some known peers
-            Message::Connect(addr) => self.peers.insert(addr).then(|| {
-                Message::Addr(
-                    self.peers
-                        .iter()
-                        .filter(|&a| a != &addr)
-                        .take(9)
-                        .chain(&[self.address])
-                        .cloned()
-                        .collect(),
-                )
-            }),
+            Message::Connect(addr) => (
+                self.peers.insert(addr).then(|| {
+                    Message::Addr(
+                        self.peers
+                            .iter()
+                            .filter(|&a| a != &addr)
+                            .take(9)
+                            .chain(&[self.address])
+                            .cloned()
+                            .collect(),
+                    )
+                }),
+                Keep,
+            ),
 
             // add broadcast peer addresses to addresses (except ourselves)
             Message::Addr(addrs) => {
                 self.peers
                     .extend(addrs.into_iter().filter(|a| a != &self.address));
-                None
+                (None, Keep)
             }
 
             // add broadcast txs to mempool and rebroadcast new ones
@@ -60,39 +71,63 @@ impl Node {
                     .filter(|(h, _)| !self.mempool.contains_key(h))
                     .collect::<Vec<_>>();
                 self.mempool.extend(new_txs.clone());
-                (!new_txs.is_empty()).then(|| {
-                    Message::Tx(Transactions(new_txs.into_iter().map(|(_, t)| t).collect()))
-                })
+                (
+                    (!new_txs.is_empty()).then(|| {
+                        Message::Tx(Transactions(new_txs.into_iter().map(|(_, t)| t).collect()))
+                    }),
+                    Start,
+                )
             }
 
             // adds a new block to chain, if valid and rebroadcasts if valid & new
             Message::NewBlock(block) => {
                 let is_new = self.chain.add_block(&block);
-                if is_new && self.chain.highest_block() == &block {
-                    // stop previous mining task
-                    if let Some(task) = &self.mining_task {
-                        task.abort();
-                        self.mempool
-                            .extend(self.txs_to_mine.0.drain(..).map(|t| (t.hash(), t)));
-                    }
-
-                    // start mining
-                    let prev_hash = self.chain.highest_block().hash();
-                    self.txs_to_mine = Transactions(self.mempool.drain().map(|(_, t)| t).collect());
-                    let txs = self.txs_to_mine.clone();
-
-                    self.mining_task = Some(task::spawn_blocking(move || {
-                        let mined_block = Block::mine_new(prev_hash, GLOBAL_DIFFICULTY, txs);
-                        // TODO: send mined block to network and ourselves
-                    }));
-                }
-                is_new.then_some(Message::NewBlock(block))
+                let restart = if self.chain.highest_block() == &block {
+                    Restart
+                } else {
+                    Start
+                };
+                (is_new.then_some(Message::NewBlock(block)), restart)
             }
         }
     }
 
     pub async fn broadcast(&self, message: Message) {
         broadcast(self.peers.iter(), message).await
+    }
+}
+
+pub async fn start_mining(node_state: Arc<RwLock<Node>>) {
+    let (prev_hash, txs) = {
+        let node = node_state.read().await;
+        let prev_hash = node.chain.highest_block().hash();
+        let txs = node
+            .mempool
+            .iter()
+            .take(MAX_TXS)
+            .map(|(_, t)| t.clone())
+            .collect();
+        (prev_hash, txs)
+    };
+
+    let task = task::spawn_blocking(move || {
+        println!("start mining");
+        Block::mine_new(prev_hash, GLOBAL_DIFFICULTY, Transactions(txs))
+    });
+
+    if let Ok(mined_block) = task.await {
+        println!("Mined {:?}", mined_block.header);
+        let mut node = node_state.write().await;
+        node.chain.add_block(&mined_block);
+        let mined_txs: HashSet<Hash> = mined_block
+            .transactions
+            .0
+            .iter()
+            .map(|t| t.hash())
+            .collect();
+        // Only keep txs that weren't included in this block
+        node.mempool.retain(|h, _| !mined_txs.contains(h));
+        node.broadcast(Message::NewBlock(mined_block)).await
     }
 }
 
@@ -107,10 +142,14 @@ async fn main() {
         address, initial_peers
     );
 
-    let mut node_state = Node::new(address, &initial_peers);
+    let node_state = Arc::new(RwLock::new(Node::new(address, &initial_peers)));
+    let mut mining_task: Option<JoinHandle<()>> = None;
 
     // Announce ourselves to network
-    node_state.broadcast(Message::Connect(address)).await;
+    {
+        let node = node_state.read().await;
+        node.broadcast(Message::Connect(address)).await;
+    }
 
     println!("Starting to process...");
     while let Ok((mut socket, _)) = listener.accept().await {
@@ -118,10 +157,30 @@ async fn main() {
         let n = socket.read(&mut buf).await.unwrap();
         let message: Message = bincode::deserialize(&buf[0..n]).unwrap();
         println!("Got {:?}", message);
-        let reply = node_state.handle(message);
+
+        let (reply, mining_command) = {
+            let mut node = node_state.write().await;
+            node.handle(message)
+        };
+
+        match mining_command {
+            Restart => {
+                if let Some(task) = mining_task {
+                    task.abort()
+                }
+                mining_task = Some(task::spawn(start_mining(node_state.clone())));
+            }
+            Start if mining_task.is_none() => {
+                mining_task = Some(task::spawn(start_mining(node_state.clone())));
+            }
+            _ => {}
+        }
+
+        // Send replies to the network if needed
         if let Some(r) = reply {
             println!("Send {:?}", &r);
-            node_state.broadcast(r).await;
+            let node = node_state.read().await;
+            node.broadcast(r).await;
         }
     }
 }
