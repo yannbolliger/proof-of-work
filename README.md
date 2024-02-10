@@ -56,3 +56,8 @@ Most limitations are highlighted in the code with `TODO` comments. Some of the b
 
 - The client/wallet application currently just creates 10 more or less random transactions and proposes them to the
   network. It would be nice to let the user specify transactions to propose (i.e. in a JSON file or similar).
+
+- The "logging" is currently just printing to the standard output. This could be changed to use an actual logger
+  so users can adjust the verbosity level.
+
+_... of course many more. ✌️😉_
