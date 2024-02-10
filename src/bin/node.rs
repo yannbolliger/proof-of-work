@@ -1,7 +1,7 @@
 use crate::MiningCommand::{Keep, Restart, Start};
 use repyh_proof_of_work::*;
 use std::collections::{HashMap, HashSet};
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpListener;
@@ -131,11 +131,17 @@ pub async fn start_mining(node_state: Arc<RwLock<Node>>) {
     }
 }
 
+const DEFAULT_SOCKET: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7000);
+
 #[tokio::main]
 async fn main() {
     let initial_peers: Vec<SocketAddr> = std::env::args().filter_map(|s| s.parse().ok()).collect();
 
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    // Try to bind to default port or take random port if already in use
+    let listener = match TcpListener::bind(DEFAULT_SOCKET).await {
+        Ok(l) => l,
+        Err(_) => TcpListener::bind("127.0.0.1:0").await.unwrap(),
+    };
     let address = listener.local_addr().unwrap();
     println!(
         "Node started at {} with initial peers: {:?}",
