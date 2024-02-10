@@ -176,12 +176,17 @@ async fn main() {
 
         match mining_command {
             Restart => {
+                println!("Restart mining");
                 if let Some(task) = mining_task {
                     task.abort()
                 }
                 mining_task = Some(task::spawn(start_mining(node_state.clone())));
             }
-            Start if mining_task.is_none() => {
+            Start
+                if mining_task.is_none()
+                    || mining_task.as_ref().is_some_and(|t| t.is_finished()) =>
+            {
+                println!("Start mining");
                 mining_task = Some(task::spawn(start_mining(node_state.clone())));
             }
             _ => {}
