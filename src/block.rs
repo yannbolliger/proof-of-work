@@ -25,7 +25,7 @@ impl Debug for BlockHeader {
     }
 }
 
-pub const GENESIS_NONCE: u32 = 442;
+pub const GENESIS_NONCE: u32 = 437;
 
 pub const GENESIS_HEADER: BlockHeader = BlockHeader {
     prev_block_hash: [0; HASH_LENGTH],
@@ -144,11 +144,11 @@ mod test {
     #[test]
     fn genesis_block_is_valid() {
         let genesis_block = Block::genesis();
+        assert_eq!(genesis_block.header.solve(), GENESIS_NONCE);
         assert!(genesis_block.is_valid());
         assert_eq!(
             genesis_block.transactions.hash(),
             genesis_block.header.merkle_hash
         );
-        assert_eq!(genesis_block.header.solve(), GENESIS_NONCE);
     }
 }
