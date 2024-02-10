@@ -192,47 +192,48 @@ async fn main() -> io::Result<()> {
         address, initial_peers
     );
 
-    // The entire state of the node
+    // The entire (thread-safe) state of the node
     let node_state = Arc::new(RwLock::new(Node::new(address, &initial_peers)));
-    let mut mining_task: Option<JoinHandle<_>> = None;
+    let mining_task = Arc::new(RwLock::new(None::<JoinHandle<_>>));
 
     // Announce ourselves to network
     broadcast(node_state.clone(), &Message::Connect(address)).await?;
 
     println!("Starting to process...");
-    // the event loop
-    // TODO: the event loop is currently synchronous but spawns off the mining.
-    //  The next iteration should be to spawn off a task for each incoming message.
     while let Ok(message) = accept_message(&listener).await {
-        println!("Got {:?}", message);
+        let node_handle = node_state.clone();
+        let task_handle = mining_task.clone();
+        tokio::spawn(async move {
+            println!("Got {:?}", message);
 
-        let (reply, mining_command) = {
-            let mut node = node_state.write().await;
-            node.handle(message)
-        };
+            let (reply, mining_command) = {
+                let mut node = node_handle.write().await;
+                node.handle(message)
+            };
 
-        match mining_command {
-            Restart => {
-                println!("Restart mining");
-                if let Some(task) = mining_task {
-                    task.abort()
-                }
-                mining_task = Some(task::spawn(start_mining(node_state.clone())));
-            }
-            Start
-                if mining_task.is_none()
-                    || mining_task.as_ref().is_some_and(|t| t.is_finished()) =>
             {
-                println!("Start mining");
-                mining_task = Some(task::spawn(start_mining(node_state.clone())));
+                let mut task = task_handle.write().await;
+                match mining_command {
+                    Restart => {
+                        println!("Restart mining");
+                        if let Some(t) = task.as_ref() {
+                            t.abort()
+                        }
+                        *task = Some(task::spawn(start_mining(node_handle.clone())));
+                    }
+                    Start if task.is_none() || task.as_ref().is_some_and(|t| t.is_finished()) => {
+                        println!("Start mining");
+                        *task = Some(task::spawn(start_mining(node_handle.clone())));
+                    }
+                    _ => {}
+                }
             }
-            _ => {}
-        }
 
-        // Send replies to the network if needed
-        if let Some(r) = reply {
-            broadcast(node_state.clone(), &r).await?;
-        }
+            // Send replies to the network if needed
+            if let Some(r) = reply {
+                broadcast(node_handle, &r).await.unwrap();
+            }
+        });
     }
     Ok(())
 }
